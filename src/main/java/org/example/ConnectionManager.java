@@ -1,103 +1,95 @@
 package org.example;
 
-import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.Properties;
 
 public class ConnectionManager {
+
     private final Properties properties;
-    private volatile Connection connection;
-    private static volatile ConnectionManager instance;
+    private static final String LOCK_TABLE_QUERY = "SELECT * FROM migration_locks WHERE id = 1 FOR UPDATE";
+    private static final String UPDATE_LOCK_QUERY = "UPDATE migration_locks SET is_locked = TRUE, locked_at = ?, locked_by = ? WHERE id = 1";
+    private static final String RELEASE_LOCK_QUERY = "UPDATE migration_locks SET is_locked = FALSE, locked_at = NULL, locked_by = NULL WHERE id = 1";
 
-    /**
-     * Приватный конструктор для Singleton.
-     */
-    private ConnectionManager() {
-        this.properties = PropertiesUtils.loadProperties("D:\\Internship\\MigrationTool\\src\\main\\resources\\application.properties");
+    public ConnectionManager(String propertiesFilePath) {
+        this.properties = PropertiesUtils.loadProperties(propertiesFilePath);
     }
 
-    /**
-     * Возвращает единственный экземпляр ConnectionManager (Singleton).
-     *
-     * @return Экземпляр ConnectionManager.
-     */
-    public static ConnectionManager getInstance() {
-        ConnectionManager localInstance = instance;
-        if (localInstance == null) {
-            synchronized (ConnectionManager.class) {
-                if (instance == null) {
-                    instance = new ConnectionManager();
-                }
-                localInstance = instance;
-            }
-        }
-        return localInstance;
-    }
-
-    /**
-     * Устанавливает подключение к базе данных.
-     */
-    public synchronized void startConnection() {
-        if (connection == null || isConnectionClosed()) {
-            try {
-                connection = DriverManager.getConnection(
-                        properties.getProperty("spring.datasource.url"),
-                        properties.getProperty("spring.datasource.username"),
-                        properties.getProperty("spring.datasource.password")
-                );
-            } catch (SQLException e) {
-                throw new RuntimeException("Failed to establish database connection: " + e.getMessage(), e);
-            }
-        }
-    }
-
-    /**
-     * Проверяет, закрыто ли подключение.
-     *
-     * @return true, если подключение закрыто или null.
-     */
-    private boolean isConnectionClosed() {
+    public Connection getConnection() {
         try {
-            return connection == null || connection.isClosed();
+            return DriverManager.getConnection(
+                    properties.getProperty("spring.datasource.url"),
+                    properties.getProperty("spring.datasource.username"),
+                    properties.getProperty("spring.datasource.password")
+            );
         } catch (SQLException e) {
-            return true; // Если ошибка при проверке, считаем, что подключение закрыто.
+            throw new RuntimeException("Failed to establish database connection: " + e.getMessage(), e);
         }
     }
+    public boolean acquireLock(Connection connection) {
+        try {
+            // Начинаем транзакцию
+            connection.setAutoCommit(false);
 
-    /**
-     * Закрывает подключение к базе данных.
-     */
-    public synchronized void closeConnection() {
-        if (connection != null) {
-            try {
-                connection.close();
+            // Попытка заблокировать строку
+            try (PreparedStatement ps = connection.prepareStatement(LOCK_TABLE_QUERY)) {
+                ResultSet rs = ps.executeQuery();
+                if (rs.next()) {
+                    boolean isLocked = rs.getBoolean("is_locked");
+                    if (!isLocked) {
+                        // Если строка не заблокирована, выполняем обновление для захвата блокировки
+                        try (PreparedStatement updatePs = connection.prepareStatement(UPDATE_LOCK_QUERY)) {
+                            updatePs.setTimestamp(1, new Timestamp(System.currentTimeMillis()));
+                            updatePs.setString(2, properties.getProperty("spring.datasource.username"));
+                            updatePs.executeUpdate();
+                            connection.commit();
+                            return true; // Блокировка успешна
+                        }
+                    } else {
+                        // Если строка уже заблокирована, возвращаем false
+                        connection.rollback();
+                        return false;
+                    }
+                } else {
+                    // Если запись не найдена, возвращаем false
+                    connection.rollback();
+                    return false;
+                }
             } catch (SQLException e) {
-                System.err.println("Failed to close database connection: " + e.getMessage());
-            } finally {
-                connection = null; // Обнуляем объект, чтобы можно было повторно создать соединение.
+                connection.rollback(); // откат при ошибке
+                throw new RuntimeException("Failed to acquire lock: " + e.getMessage(), e);
             }
+
+        } catch (SQLException e) {
+            throw new RuntimeException("Database error during lock acquisition: " + e.getMessage(), e);
+        }
+    }
+    public void releaseLock(Connection connection) {
+        try {
+            connection.setAutoCommit(false);
+            // Сначала проверяем, кто держит блокировку
+            try (PreparedStatement ps = connection.prepareStatement("SELECT locked_by FROM migration_locks WHERE id = 1 FOR UPDATE")) {
+                ResultSet rs = ps.executeQuery();
+                if (rs.next()) {
+                    String lockedBy = rs.getString("locked_by");
+
+                    // Проверяем, что текущий пользователь является тем, кто установил блокировку
+                    if (lockedBy != null && lockedBy.equals(properties.getProperty("spring.datasource.username"))) {
+                        // Если это тот же пользователь, который установил блокировку, снимаем её
+                        try (PreparedStatement releasePs = connection.prepareStatement(RELEASE_LOCK_QUERY)) {
+                            releasePs.executeUpdate();
+                            connection.commit(); // Сохраняем изменения
+                        }
+                    } else {
+                        throw new RuntimeException("You are not allowed to release this lock. It was locked by: " + lockedBy);
+                    }
+                } else {
+                    throw new RuntimeException("No lock found to release.");
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("Failed to release lock: " + e.getMessage(), e);
         }
     }
 
-    /**
-     * Загрузка свойств из файла.
-     *
-     * @param filePath Путь к файлу свойств.
-     * @return Объект Properties.
-     */
-    private Properties loadProperties(String filePath) {
-        Properties properties = new Properties();
-        try (var inputStream = getClass().getClassLoader().getResourceAsStream(filePath)) {
-            if (inputStream != null) {
-                properties.load(inputStream);
-            } else {
-                throw new RuntimeException("Properties file not found at: " + filePath);
-            }
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to load properties file: " + e.getMessage(), e);
-        }
-        return properties;
-    }
 }
+
