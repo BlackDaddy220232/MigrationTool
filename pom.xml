@@ -26,6 +26,25 @@
             <version>1.18.36</version>
             <scope>provided</scope>
         </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>1.7.32</version> <!-- Убедитесь, что версия соответствует вашей -->
+        </dependency>
+
+        <!-- Реализация логирования через Logback -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.2.6</version> <!-- Убедитесь, что версия соответствует вашей -->
+        </dependency>
+
+        <!-- Зависимость для Logback-конфигурации (если необходимо) -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-core</artifactId>
+            <version>1.2.6</version>
+        </dependency>
 
     </dependencies>
 

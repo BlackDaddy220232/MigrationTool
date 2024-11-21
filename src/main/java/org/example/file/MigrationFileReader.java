@@ -1,36 +1,38 @@
-package org.example;
+package org.example.file;
+
+import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 public class MigrationFileReader {
     private final String migrationPath;
 
-    // Конструктор для задания пути миграций
     public MigrationFileReader(String migrationPath) {
         this.migrationPath = migrationPath;
     }
 
-    // Метод для получения списка файлов миграций
     public List<File> getMigrationFiles() {
         try {
-            return Files.list(Paths.get(migrationPath)) // Читаем все файлы в папке
+            List<File> migrationFiles = Files.list(Paths.get(migrationPath)) // Читаем все файлы в папке
                     .filter(Files::isRegularFile) // Оставляем только файлы
                     .filter(path -> path.toString().endsWith(".sql")) // Фильтруем только файлы .sql
-                    .sorted(Comparator.reverseOrder())
+                    .sorted(Comparator.naturalOrder()) // Сортируем по имени
                     .map(Path::toFile) // Преобразуем Path в File
-                    .collect(Collectors.toCollection(LinkedList::new)); // Собираем в LinkedList
+                    .collect(Collectors.toList()); // Собираем в List
+
+            log.info("Successfully retrieved migration files from {}", migrationPath);
+            return migrationFiles;
+
         } catch (IOException e) {
-            e.printStackTrace();
+            log.error("Error while reading migration files from {}: {}", migrationPath, e.getMessage(), e);
             return new LinkedList<>(); // Возвращаем пустой список в случае ошибки
         }
     }
-
 }
