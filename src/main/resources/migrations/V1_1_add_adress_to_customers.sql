@@ -1,2 +1,2 @@
 ALTER TABLE Customers
-    ADD COLUMN Address NVARCHAR(100);
+    ADD COLUMN Address VARCHAR(100);
