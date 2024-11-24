@@ -30,7 +30,6 @@ public class MigrationExecutor {
     private final MigrationManager migrationManager;
     private final ParseSql parseSql;
     private final Connection connection;
-    private List<File> migrationFiles;
     private final Properties properties;
     private static final String INSERT_NEW_MIGRATION_QUERY = "INSERT INTO applied_migrations (migration_name, applied_at, created_by) VALUES (?, ?, ?)";
 
@@ -43,9 +42,9 @@ public class MigrationExecutor {
 
         this.parseSql = new ParseSql();
         this.connection = connectionManager.getConnection();
-        this.migrationFiles = migrationManager.getPendingMigrations(connection);
     }
     public boolean executeMigrations() {
+        List<File> migrationFiles = migrationManager.getPendingMigrations(connection);
         log.info("Starting migration execution...");
         try {
             connection.setAutoCommit(false);
@@ -82,9 +81,21 @@ public class MigrationExecutor {
             throw new MigrationException("");
         }
     }
+    public void getStatus(){
+        List<String> appliedMinagrations = migrationManager.getAppliedMigrations(connection);
+        List<File> pendingMigration = migrationManager.getPendingMigrations(connection);
+        log.info("Applied migration:");
+        for (String filename:appliedMinagrations){
+            log.info(filename);
+        }
+        log.info("Pending migration:");
+        for (File file: pendingMigration){
+            log.info(file.getName());
+        }
+    }
 
     private boolean executeSingleMigration(File migrationFile, Connection connection) {
-        String sqlCommand = parseSql.sqlConverter(migrationFile);
+        String sqlCommand = parseSql.readSqlFileToString(migrationFile);
         log.info("Executing migration: {}", migrationFile.getName());
         try (PreparedStatement preparedStatement = connection.prepareStatement(sqlCommand)) {
             preparedStatement.execute();
@@ -113,15 +124,5 @@ public class MigrationExecutor {
             log.error("Failed to rollback transaction: {}", e.getMessage(), e);
             throw new RuntimeException("Rollback failed: " + e.getMessage(), e);
         }
-    }
-
-    private void handleExecutionError(Connection connection, SQLException e) {
-        log.error("Error during migration execution: {}", e.getMessage(), e);
-        rollbackTransaction(connection);
-    }
-    private String extractVersionFromFileName(String fileName) {
-        // Предполагаем, что версия идет сразу после префикса "V" или "UNDO"
-        String versionPart = fileName.replaceAll("[^0-9_]", ""); // Убираем все символы, кроме цифр и подчеркиваний
-        return versionPart;
     }
 }

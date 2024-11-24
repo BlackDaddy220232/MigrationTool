@@ -46,6 +46,17 @@ public class MigrationManager {
         }
     }
 
+    public void deleteMigrations(Integer numbersToDelete,Connection connection) {
+        try (PreparedStatement statement = connection.prepareStatement(DELETE_MIGRATION_QUERY)) {
+            statement.setInt(1, numbersToDelete); // Устанавливаем количество миграций для удаления
+            int rowsAffected = statement.executeUpdate(); // Выполняем удаление
+            log.info("Deleted " + rowsAffected + " migrations from applied_migrations.");
+        } catch (SQLException e) {
+            log.error("Failed to register migrations: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to register migrations: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Fetches pending migrations by comparing applied migrations and available files.
      *
@@ -71,56 +82,57 @@ public class MigrationManager {
             throw new RuntimeException("Failed to register migrations: " + e.getMessage(), e);
         }
     }
-    public List<File> getRollbackMigrations(String version,Connection connection) {
+    public List<File> getRollbackMigrations(String version, Connection connection) {
         log.info("Starting rollback to {} version", version);
-
-        // Получаем все примененные миграции
         List<String> appliedMigrations = getAppliedMigrations(connection);
-        // Получаем все файлы откатов
         List<File> rollbackFiles = fileReader.getRollbackFiles();
-
-        // Сортируем примененные миграции в обратном порядке (самая последняя миграция будет первой)
         Collections.reverse(appliedMigrations);
+        return findRollbackFilesToApply(version, appliedMigrations, rollbackFiles);
+    }
 
-        // Список файлов откатов, которые нужно вернуть
+    /**
+     * Поиск файлов откатов, которые нужно применить.
+     */
+    private List<File> findRollbackFilesToApply(String version, List<String> appliedMigrations, List<File> rollbackFiles) {
         List<File> rollbackFilesToReturn = new ArrayList<>();
-
-        // Перебираем примененные миграции с самой последней
-        for (int i = 0; i < appliedMigrations.size(); i++) {
-            String appliedMigration = appliedMigrations.get(i);
+        for (String appliedMigration : appliedMigrations) {
             String appliedMigrationVersion = extractVersionFromFileName(appliedMigration);
-
-            // Если достигли указанной версии для отката, прекращаем обработку
-            System.out.println(appliedMigrationVersion);
             if (appliedMigrationVersion.equals(version)) {
-                break; // Остановим обработку, если достигнута версия отката
+                break;
             }
-
-            // Найдем файл отката для текущей миграции
             File rollbackFile = findRollbackFileForMigration(appliedMigrationVersion, rollbackFiles);
-
-            // Если файл отката не найден, выбрасываем ошибку
-            if (rollbackFile == null) {
-                throw new MigrationException("Missing rollback file for migration version: " + appliedMigrationVersion);
-            }
-
-            // Проверим, что версия в файле отката совпадает с версией миграции
-            String rollbackFileName = rollbackFile.getName();
-            String rollbackVersion = extractVersionFromFileName(rollbackFileName);
-
-            if (!rollbackVersion.equals(appliedMigrationVersion)) {
-                throw new MigrationException("Version mismatch: migration " + appliedMigrationVersion + " does not have corresponding rollback file with version " + rollbackVersion);
-            }
-
+            validateRollbackFile(appliedMigrationVersion, rollbackFile);
             log.info("Rollback file found for migration version {}: {}", appliedMigrationVersion, rollbackFile.getName());
-
-            // Добавляем файл отката в список для возврата
             rollbackFilesToReturn.add(rollbackFile);
         }
-
-        // Возвращаем список файлов для отката
         return rollbackFilesToReturn;
     }
+
+    /**
+     * Проверяет существование файла отката и его версию.
+     */
+    private void validateRollbackFile(String appliedMigrationVersion, File rollbackFile) {
+        if (rollbackFile == null) {
+            throw new MigrationException("Missing rollback file for migration version: " + appliedMigrationVersion);
+        }
+        String rollbackFileName = rollbackFile.getName();
+        String rollbackVersion = extractVersionFromFileName(rollbackFileName);
+        if (!rollbackVersion.equals(appliedMigrationVersion)) {
+            throw new MigrationException("Version mismatch: migration " + appliedMigrationVersion +
+                    " does not have corresponding rollback file with version " + rollbackVersion);
+        }
+    }
+
+    /**
+     * Ищет файл отката для заданной версии миграции.
+     */
+    private File findRollbackFileForMigration(String migrationVersion, List<File> rollbackFiles) {
+        return rollbackFiles.stream()
+                .filter(file -> migrationVersion.equals(extractVersionFromFileName(file.getName())))
+                .findFirst()
+                .orElse(null);
+    }
+
 
     // Метод для извлечения версии из имени файла
     private String extractVersionFromFileName(String fileName) {
@@ -130,36 +142,7 @@ public class MigrationManager {
         return versionPart.replaceAll("(_\\D.*|[^\\d]+$)", "");
     }
 
-    public void deleteMigrations(Integer numbersToDelete,Connection connection) {
-        try (PreparedStatement statement = connection.prepareStatement(DELETE_MIGRATION_QUERY)) {
-            statement.setInt(1, numbersToDelete); // Устанавливаем количество миграций для удаления
-            int rowsAffected = statement.executeUpdate(); // Выполняем удаление
-            log.info("Deleted " + rowsAffected + " migrations from applied_migrations.");
-        } catch (SQLException e) {
-            log.error("Failed to register migrations: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to register migrations: " + e.getMessage(), e);
-        }
-    }
 
-    // Метод для нахождения файла отката для конкретной миграции
-    private File findRollbackFileForMigration(String migrationVersion, List<File> rollbackFiles) {
-        for (File rollbackFile : rollbackFiles) {
-            String rollbackFileName = rollbackFile.getName();
-            String rollbackVersion = extractVersionFromFileName(rollbackFileName);
-
-            // Проверяем, если версия отката совпадает с версией миграции
-            if (rollbackVersion.equals(migrationVersion)) {
-                return rollbackFile;
-            }
-        }
-        return null; // Если файл отката не найден
-    }
-
-
-
-    /**
-     * Extracts applied migrations from the result set.
-     */
     private List<String> extractAppliedMigrations(ResultSet rs) throws SQLException {
         List<String> appliedMigrations = new ArrayList<>();
         while (rs.next()) {
