@@ -5,6 +5,7 @@ import org.example.exception.LockException;
 
 import java.sql.*;
 import java.util.Properties;
+import java.util.Scanner;
 
 @Slf4j
 public class ConnectionManager {
@@ -31,8 +32,8 @@ public class ConnectionManager {
             log.info("Database connection established successfully.");
             return connection;
         } catch (SQLException e) {
-            log.error("Failed to establish database connection", e);
-            throw new RuntimeException("Failed to establish database connection: " + e.getMessage());
+            log.error("Failed to establish database connection");
+            return null;
         }
     }
 
@@ -45,7 +46,6 @@ public class ConnectionManager {
                 log.warn("Lock has expired. Releasing the old lock...");
                 releaseLock(connection);
             }
-
             return attemptToAcquireLock(connection);
 
         } catch (SQLException e) {

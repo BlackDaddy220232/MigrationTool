@@ -1,42 +1,65 @@
-package org.example.db;
+package org.example.executor;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.example.db.ConnectionManager;
+import org.example.db.MigrationManager;
+import org.example.exception.MigrationException;
+import org.example.file.MigrationFileReader;
 import org.example.file.ParseSql;
+import org.example.utils.PropertiesUtils;
 
 import java.io.File;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Properties;
 
-@AllArgsConstructor
-@NoArgsConstructor
+
 @Getter
 @Slf4j
 public class MigrationExecutor {
 
-    private ParseSql parseSql = new ParseSql();
+    private final ConnectionManager connectionManager;
+    private final MigrationManager migrationManager;
+    private final ParseSql parseSql;
+    private final Connection connection;
+    private List<File> migrationFiles;
+    private final Properties properties;
+    private static final String INSERT_NEW_MIGRATION_QUERY = "INSERT INTO applied_migrations (migration_name, applied_at, created_by) VALUES (?, ?, ?)";
 
-    public boolean executeMigrations(List<File> migrationFiles, Connection connection) {
+    public MigrationExecutor(ConnectionManager connectionManager,
+                             MigrationManager migrationManager,
+                             Properties properties) {
+        this.connectionManager = connectionManager;
+        this.migrationManager = migrationManager;
+        this.properties = properties;
+
+        this.parseSql = new ParseSql();
+        this.connection = connectionManager.getConnection();
+        this.migrationFiles = migrationManager.getPendingMigrations(connection);
+    }
+    public boolean executeMigrations() {
         log.info("Starting migration execution...");
         try {
             connection.setAutoCommit(false);
-            for (File migrationFile : migrationFiles) {
-                if (!executeSingleMigration(migrationFile, connection)) {
-                    rollbackTransaction(connection);
+            for (File file : migrationFiles) {
+                if (!executeSingleMigration(file, connection)) {
+                    connection.rollback();
                     return false;
                 }
             }
+            migrationManager.registerMigrations(migrationFiles, connection);
             commitTransaction(connection);
-            log.info("All migrations successfully applied!");
             return true;
 
-        } catch (SQLException e) {
-            handleExecutionError(connection, e);
-            return false;
+        } catch (SQLException exception) {
+            throw new MigrationException("", exception);
         }
     }
 

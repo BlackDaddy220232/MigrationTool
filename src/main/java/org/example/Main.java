@@ -6,7 +6,7 @@ import java.sql.SQLException;
 
 public class Main {
     private static final MigrationTool migrationTool = new MigrationTool();
-    public static void main(String[] args) throws InterruptedException {
-        migrationTool.doMigrations();
+    public static void main(String[] args) throws InterruptedException, SQLException {
+        migrationTool.migrate();
     }
 }
