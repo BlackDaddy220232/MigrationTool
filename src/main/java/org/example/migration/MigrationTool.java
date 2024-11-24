@@ -27,5 +27,7 @@ public class MigrationTool {
     public void migrate(){
         migrationExecutor.executeMigrations();
     }
+    public void rollback(){migrationExecutor.rollbackMigrations("1_0");
+    }
 
 }

@@ -16,6 +16,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Properties;
@@ -59,7 +60,26 @@ public class MigrationExecutor {
             return true;
 
         } catch (SQLException exception) {
-            throw new MigrationException("", exception);
+            throw new MigrationException("");
+        }
+    }
+    public boolean rollbackMigrations(String version) {
+        List<File> rollbackFileToExecute = migrationManager.getRollbackMigrations("1_0",connection);
+        log.info("Starting rollback to version {}",version);
+        try {
+            connection.setAutoCommit(false);
+            for (File file : rollbackFileToExecute) {
+                if (!executeSingleMigration(file, connection)) {
+                    connection.rollback();
+                    return false;
+                }
+            }
+            migrationManager.deleteMigrations(rollbackFileToExecute.size(),connection);
+            commitTransaction(connection);
+            return true;
+
+        } catch (SQLException exception) {
+            throw new MigrationException("");
         }
     }
 
@@ -98,5 +118,10 @@ public class MigrationExecutor {
     private void handleExecutionError(Connection connection, SQLException e) {
         log.error("Error during migration execution: {}", e.getMessage(), e);
         rollbackTransaction(connection);
+    }
+    private String extractVersionFromFileName(String fileName) {
+        // Предполагаем, что версия идет сразу после префикса "V" или "UNDO"
+        String versionPart = fileName.replaceAll("[^0-9_]", ""); // Убираем все символы, кроме цифр и подчеркиваний
+        return versionPart;
     }
 }

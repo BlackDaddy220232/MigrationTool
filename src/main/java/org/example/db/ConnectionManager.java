@@ -50,7 +50,7 @@ public class ConnectionManager {
 
         } catch (SQLException e) {
             log.error("Database error during lock acquisition: {}", e.getMessage(), e);
-            throw new LockException("Database error during lock acquisition: " + e.getMessage(), e);
+            throw new LockException("Database error during lock acquisition: " + e.getMessage());
         }
     }
 
@@ -66,7 +66,7 @@ public class ConnectionManager {
 
         } catch (SQLException e) {
             log.error("Failed to release lock: {}", e.getMessage(), e);
-            throw new LockException("Failed to release lock: " + e.getMessage(), e);
+            throw new LockException("Failed to release lock: " + e.getMessage());
         }
     }
 
