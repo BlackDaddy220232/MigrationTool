@@ -1,6 +1,7 @@
 package org.example.db;
 
 import lombok.extern.slf4j.Slf4j;
+import org.example.exception.LockException;
 
 import java.sql.*;
 import java.util.Properties;
@@ -10,6 +11,7 @@ public class ConnectionManager {
 
     private final Properties properties;
     private static final String LOCK_TABLE_QUERY = "SELECT * FROM migration_locks WHERE id = 1 FOR UPDATE";
+    private static final String FETCH_LOCK_DETAILS_QUERY = "SELECT locked_by, locked_at FROM migration_locks WHERE id = 1 FOR UPDATE";
     private static final String UPDATE_LOCK_QUERY = "UPDATE migration_locks SET is_locked = TRUE, locked_at = ?, locked_by = ? WHERE id = 1";
     private static final String RELEASE_LOCK_QUERY = "UPDATE migration_locks SET is_locked = FALSE, locked_at = NULL, locked_by = NULL WHERE id = 1";
     private static final long LOCK_EXPIRATION_TIME_MS = 10000; // 10 секунд
@@ -48,11 +50,11 @@ public class ConnectionManager {
 
         } catch (SQLException e) {
             log.error("Database error during lock acquisition: {}", e.getMessage(), e);
-            throw new RuntimeException("Database error during lock acquisition: " + e.getMessage(), e);
+            throw new LockException("Database error during lock acquisition: " + e.getMessage(), e);
         }
     }
 
-    public boolean releaseLock(Connection connection) {
+    public void releaseLock(Connection connection) {
         log.info("Attempting to release lock...");
         try {
             connection.setAutoCommit(false);
@@ -60,13 +62,11 @@ public class ConnectionManager {
             if (canReleaseLock(connection)) {
                 executeLockRelease(connection);
                 log.info("Lock successfully released.");
-                return true;
             }
-            return false;
 
         } catch (SQLException e) {
             log.error("Failed to release lock: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to release lock: " + e.getMessage(), e);
+            throw new LockException("Failed to release lock: " + e.getMessage(), e);
         }
     }
 
@@ -105,12 +105,11 @@ public class ConnectionManager {
     }
 
     private boolean canReleaseLock(Connection connection) throws SQLException {
-        try (PreparedStatement ps = connection.prepareStatement("SELECT locked_by, locked_at FROM migration_locks WHERE id = 1 FOR UPDATE");
+        try (PreparedStatement ps = connection.prepareStatement(FETCH_LOCK_DETAILS_QUERY);
              ResultSet rs = ps.executeQuery()) {
             if (rs.next()) {
                 String lockedBy = rs.getString("locked_by");
                 Timestamp lockedAt = rs.getTimestamp("locked_at");
-
                 return (lockedAt != null && System.currentTimeMillis() - lockedAt.getTime() > LOCK_EXPIRATION_TIME_MS) ||
                         properties.getProperty("db.username").equals(lockedBy);
             }
