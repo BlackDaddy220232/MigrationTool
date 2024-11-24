@@ -13,11 +13,10 @@ import java.sql.*;
 import java.util.List;
 import java.util.Properties;
 
-import static org.example.utils.PropertiesUtils.loadProperties;
 @NoArgsConstructor
 @Slf4j
 public class MigrationTool {
-    Properties properties = PropertiesUtils.loadProperties("src/main/resources/application.properties");
+    Properties properties = PropertiesUtils.loadProperties("application.properties");
     ConnectionManager connectionManager = new ConnectionManager(properties);
 
     MigrationManager migrationManager = new MigrationManager(properties);
@@ -27,7 +26,7 @@ public class MigrationTool {
     public void migrate(){
         migrationExecutor.executeMigrations();
     }
-    public void rollback(){migrationExecutor.rollbackMigrations("1_0");
-    }
+    public void rollback(){migrationExecutor.rollbackMigrations("1_0");}
+    public void status(){migrationExecutor.getStatus();}
 
 }
