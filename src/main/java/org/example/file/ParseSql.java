@@ -7,23 +7,26 @@ import java.io.*;
 @Slf4j
 public class ParseSql {
 
-    public String sqlConverter(File migrationFile) {
-        StringBuilder result = new StringBuilder();
+    public String readSqlFileToString(File migrationFile) {
+        if (migrationFile == null || !migrationFile.exists()) {
+            log.error("Provided file is null or doesn't exist: {}", migrationFile);
+            throw new IllegalArgumentException("Invalid file: File is null or does not exist.");
+        }
 
-        // Чтение файла
+        log.info("Attempting to read file: {}", migrationFile.getName());
+
         try (BufferedReader fileReader = new BufferedReader(new FileReader(migrationFile))) {
+            StringBuilder result = new StringBuilder();
             String line;
             while ((line = fileReader.readLine()) != null) {
                 result.append(line).append(System.lineSeparator());
             }
             log.info("Successfully read file: {}", migrationFile.getName());
             return result.toString();
-        } catch (FileNotFoundException exception) {
-            log.error("File {} doesn't exist: {}", migrationFile.getName(), exception.getMessage());
-            throw new RuntimeException("File doesn't exist: " + migrationFile.getName(), exception); // Бросаем RuntimeException
         } catch (IOException exception) {
-            log.error("An error occurred while reading file {}: {}", migrationFile.getName(), exception.getMessage(), exception);
-            throw new RuntimeException("An error occurred while reading file: " + migrationFile.getName(), exception); // Бросаем RuntimeException
+            log.error("Error reading file {}: {}", migrationFile.getName(), exception.getMessage(), exception);
+            throw new RuntimeException("Failed to read file: " + migrationFile.getName(), exception);
         }
     }
+
 }
