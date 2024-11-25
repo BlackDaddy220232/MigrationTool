@@ -34,7 +34,6 @@ public class ParseSql {
     private void validateFile(File migrationFile) {
         if (migrationFile == null || !migrationFile.exists()) {
             log.error("Invalid file: {}", migrationFile);
-            throw new IllegalArgumentException("Invalid file: File is null or does not exist.");
         }
     }
 
@@ -49,6 +48,5 @@ public class ParseSql {
 
     private void logErrorAndThrow(File migrationFile, IOException exception) {
         log.error("Error reading file {}: {}", migrationFile.getName(), exception.getMessage(), exception);
-        throw new RuntimeException("Failed to read file: " + migrationFile.getName(), exception);
     }
 }
