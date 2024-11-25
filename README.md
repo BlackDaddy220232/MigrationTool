@@ -92,7 +92,7 @@ mvn clean install
 
 Execute the main class:
 ```
-java -jar target/migration-tool.jar
+java -jar target/MigrationTool-1.0-SNAPSHOT.jar
 ```
 ## Usage
 
