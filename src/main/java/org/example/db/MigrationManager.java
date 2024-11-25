@@ -1,6 +1,7 @@
 package org.example.db;
 
 import lombok.extern.slf4j.Slf4j;
+import org.example.exception.DatabaseException;
 import org.example.exception.MigrationException;
 import org.example.file.MigrationFileReader;
 
@@ -21,6 +22,22 @@ public class MigrationManager {
             "  ORDER BY id DESC " +
             "  LIMIT ?" + // используем параметр LIMIT для выбора количества удаляемых записей
             ")";
+
+    private static final String IS_TABLE_APPLIED_MIGRATIONS_EXIST = "SELECT to_regclass('applied_migrations');";
+    private static final String IS_TABLE_MIGRATION_LOCKS_EXIST="SELECT to_regclass('migration_locks');";
+    private static final String CREATE_TABLE_APPLIED_MIGRATIONS="CREATE TABLE applied_migrations (" +
+            "id SERIAL PRIMARY KEY, " +
+            "migration_name VARCHAR(255) UNIQUE NOT NULL, " +
+            "applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, " +
+            "created_by VARCHAR(255)" +
+            ");";
+    private static final String CREATE_TABLE_MIGRATION_LOCKS="CREATE TABLE migration_locks ("
+            + "id SERIAL PRIMARY KEY, "
+            + "is_locked BOOLEAN NOT NULL, "
+            + "locked_at TIMESTAMP, "
+            + "locked_by VARCHAR(255)); "
+            + "INSERT INTO migration_locks (id, is_locked, locked_at, locked_by) "
+            + "VALUES (1, false, NULL, NULL);";
     private MigrationFileReader fileReader;
 
     private Properties properties;
@@ -42,7 +59,7 @@ public class MigrationManager {
             return extractAppliedMigrations(rs);
         } catch (SQLException e) {
             log.error("Failed to fetch applied migrations: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to fetch applied migrations: " + e.getMessage(), e);
+            throw new MigrationException("Failed to fetch applied migrations: " + e.getMessage());
         }
     }
 
@@ -53,7 +70,7 @@ public class MigrationManager {
             log.info("Deleted " + rowsAffected + " migrations from applied_migrations.");
         } catch (SQLException e) {
             log.error("Failed to register migrations: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to register migrations: " + e.getMessage(), e);
+            throw new MigrationException("Failed to register migrations: " + e.getMessage());
         }
     }
 
@@ -79,15 +96,24 @@ public class MigrationManager {
             executeMigrationRegistration(migrationFiles, connection);
         } catch (SQLException e) {
             log.error("Failed to register migrations: {}", e.getMessage(), e);
-            throw new RuntimeException("Failed to register migrations: " + e.getMessage(), e);
+            throw new MigrationException("Failed to register migrations: " + e.getMessage());
         }
     }
     public List<File> getRollbackMigrations(String version, Connection connection) {
-        log.info("Starting rollback to {} version", version);
         List<String> appliedMigrations = getAppliedMigrations(connection);
         List<File> rollbackFiles = fileReader.getRollbackFiles();
+        if(!isVersionExists(appliedMigrations,version)){
+            throw new MigrationException("This version doesn't exist");
+        }
         Collections.reverse(appliedMigrations);
         return findRollbackFilesToApply(version, appliedMigrations, rollbackFiles);
+    }
+    public boolean createTables(Connection connection) {
+        boolean tablesCreated = createAppliedMigrationsTable(connection);
+        if (createMigrationLocksTable(connection)) {
+            tablesCreated = true;
+        }
+        return tablesCreated;
     }
 
     /**
@@ -107,7 +133,19 @@ public class MigrationManager {
         }
         return rollbackFilesToReturn;
     }
-
+    private boolean isVersionExists(List<String> migrations, String version){
+        for (String migrationVersion : migrations){
+            if(compareMigrationVersions(migrationVersion,version)){
+                return true;
+            }
+        }
+        return false;
+    }
+    private boolean compareMigrationVersions(String firstMigration, String secondMigration){
+        String firstMigrationVersion = extractVersionFromFileName(firstMigration);
+        String secondMigrationVersion = extractVersionFromFileName(secondMigration);
+        return firstMigrationVersion.equals(secondMigrationVersion);
+    }
     /**
      * Проверяет существование файла отката и его версию.
      */
@@ -170,7 +208,7 @@ public class MigrationManager {
         } catch (SQLException e) {
             connection.rollback();
             log.warn("Transaction rolled back due to an error.");
-            throw new MigrationException("Transaction rolled back due to an error.");
+            throw new DatabaseException("Transaction rolled back due to an error.");
         }
     }
     private void addMigrationToBatch(PreparedStatement ps, File migrationFile) throws SQLException {
@@ -180,6 +218,46 @@ public class MigrationManager {
         ps.setString(3, properties.getProperty("db.username"));
         ps.addBatch();
         log.info("Added migration {} to the batch.", migrationName);
+    }
+    private boolean isTableExists(String sqlCommand,Connection connection){
+        try(PreparedStatement ps = connection.prepareStatement(sqlCommand)){
+            ps.execute();
+            ResultSet resultSet = ps.getResultSet();
+            resultSet.next();
+            if((resultSet.getArray(1)==null)){
+                return false;
+            }
+            return true;
+        }catch (SQLException e){
+            log.error("Can't get access to database");
+            throw new DatabaseException("Can't get access to database");
+        }
+    }
+
+    private boolean createAppliedMigrationsTable(Connection connection) {
+        if (!isTableExists(IS_TABLE_APPLIED_MIGRATIONS_EXIST, connection)) {
+            try (PreparedStatement ps = connection.prepareStatement(CREATE_TABLE_APPLIED_MIGRATIONS)) {
+                ps.execute();
+                return true; // Indicate that the table was created
+            } catch (SQLException e) {
+                log.error("Failed to create applied migrations table");
+                throw new DatabaseException("Failed to create applied migrations table"+e.getMessage());
+            }
+        }
+        return false; // Table already exists
+    }
+
+    private boolean createMigrationLocksTable(Connection connection) {
+        if (!isTableExists(IS_TABLE_MIGRATION_LOCKS_EXIST, connection)) {
+            try (PreparedStatement ps = connection.prepareStatement(CREATE_TABLE_MIGRATION_LOCKS)) {
+                ps.execute();
+                return true; // Indicate that the table was created
+            } catch (SQLException e) {
+                log.error("Failed to create migration locks table");
+                throw new DatabaseException("Failed to create migration locks table" + e.getMessage());
+            }
+        }
+        return false; // Table already exists
     }
 
 
