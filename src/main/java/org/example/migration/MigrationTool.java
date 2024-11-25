@@ -45,6 +45,7 @@ public class MigrationTool {
                     case 1: migrate(); break;
                     case 2: choosingRollbackOption(scanner); break;
                     case 3: status(); break;
+                    case 4: return;
                     default: log.warn("Invalid choice, please try again.");
                 }
             }
@@ -56,6 +57,7 @@ public class MigrationTool {
         System.out.println("1. Run migrations");
         System.out.println("2. Rollback to any version");
         System.out.println("3. Get status of migrations");
+        System.out.println("4. Exit");
         System.out.print("Choose your option: ");
     }
 
