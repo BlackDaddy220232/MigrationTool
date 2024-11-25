@@ -78,12 +78,13 @@ public class MigrationManager {
      * @param numbersToDelete Number of migrations to delete
      * @param connection The database connection
      */
-    public void deleteMigrations(Integer numbersToDelete,Connection connection) {
+    public void deleteMigrations(Integer numbersToDelete,Connection connection) throws SQLException {
         try (PreparedStatement statement = connection.prepareStatement(DELETE_MIGRATION_QUERY)) {
             statement.setInt(1, numbersToDelete); // Устанавливаем количество миграций для удаления
             int rowsAffected = statement.executeUpdate(); // Выполняем удаление
             log.debug("Deleted " + rowsAffected + " migrations from applied_migrations.");
         } catch (SQLException e) {
+            connection.rollback();
             logAndThrowMigrationException("Failed to register migrations: {}",e);
         }
     }

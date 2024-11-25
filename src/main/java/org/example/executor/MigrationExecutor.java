@@ -149,6 +149,10 @@ public class MigrationExecutor {
 
     private boolean executeSingleMigration(File migrationFile, Connection connection) {
         String sqlCommand = parseSql.readSqlFileToString(migrationFile);
+        if(sqlCommand == null){
+            log.error("SQL command is empty");
+            return false;
+        }
         log.info("Executing migration: {}", migrationFile.getName());
         try (PreparedStatement preparedStatement = connection.prepareStatement(sqlCommand)) {
             preparedStatement.execute();
@@ -159,11 +163,12 @@ public class MigrationExecutor {
         }
     }
 
-    private void commitTransaction(Connection connection) {
+    private void commitTransaction(Connection connection) throws SQLException {
         try {
             connection.commit();
             log.info("Transaction committed successfully.");
         } catch (SQLException e) {
+            connection.rollback();
             log.error("Failed to commit transaction: {}", e.getMessage());
             throw new DatabaseException("Failed to commit transaction: " + e.getMessage());
         }
