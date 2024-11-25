@@ -14,6 +14,9 @@ import java.util.stream.Collectors;
 public class MigrationFileReader {
     private final String migrationPath;
     private final String rollbackPath;
+    private static final String REGEX_MIGRATION_FILE="^V\\d+_\\d+_.*\\.sql$";
+
+    private static final String REGEX_ROLLBACK_FILE="^UNDO\\d+_\\d+_.*\\.sql$";
 
     public MigrationFileReader(String migrationPath, String rollbackPath) {
         this.migrationPath = migrationPath;
@@ -25,7 +28,7 @@ public class MigrationFileReader {
         try {
             List<File> migrationFiles = Files.list(Paths.get(migrationPath)) // Читаем все файлы в папке
                     .filter(Files::isRegularFile) // Оставляем только файлы
-                    .filter(path -> path.toString().endsWith(".sql") && validateMigrationFile(path)) // Фильтруем только файлы .sql с валидацией
+                    .filter(path -> path.toString().endsWith(".sql") && validateFile(path,REGEX_MIGRATION_FILE)) // Фильтруем только файлы .sql с валидацией
                     .sorted(Comparator.naturalOrder()) // Сортируем по имени
                     .map(Path::toFile) // Преобразуем Path в File
                     .collect(Collectors.toList()); // Собираем в List
@@ -44,7 +47,7 @@ public class MigrationFileReader {
         try {
             List<File> rollbackFiles = Files.list(Paths.get(rollbackPath)) // Читаем все файлы в папке
                     .filter(Files::isRegularFile) // Оставляем только файлы
-                    .filter(path -> path.toString().endsWith(".sql") && validateRollbackFile(path)) // Фильтруем только файлы .sql с валидацией
+                    .filter(path -> path.toString().endsWith(".sql") && validateFile(path,REGEX_ROLLBACK_FILE)) // Фильтруем только файлы .sql с валидацией
                     .sorted(Comparator.naturalOrder()) // Сортируем по имени
                     .map(Path::toFile) // Преобразуем Path в File
                     .collect(Collectors.toList()); // Собираем в List
@@ -59,27 +62,13 @@ public class MigrationFileReader {
     }
 
     // Валидация для файлов миграции
-    private boolean validateMigrationFile(Path path) {
+    private boolean validateFile(Path path, String regex) {
         String fileName = path.getFileName().toString();
-        // Проверка на соответствие шаблону Vx_x_file_name.sql
-        if (fileName.matches("^V\\d+_\\d+_.*\\.sql$")) {
-            log.info("Valid migration file: {}", fileName);
+        if (fileName.matches(regex)) {
+            log.info("Valid {} file", fileName);
             return true;
         } else {
-            log.warn("Invalid migration file: {}", fileName);
-            return false;
-        }
-    }
-
-    // Валидация для файлов отката
-    private boolean validateRollbackFile(Path path) {
-        String fileName = path.getFileName().toString();
-        // Проверка на соответствие шаблону UNDOx_x_file_name.sql
-        if (fileName.matches("^UNDO\\d+_\\d+_.*\\.sql$")) {
-            log.info("Valid rollback file: {}", fileName);
-            return true;
-        } else {
-            log.warn("Invalid rollback file: {}", fileName);
+            log.warn("Invalid {} file:", fileName);
             return false;
         }
     }
