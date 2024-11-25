@@ -124,4 +124,4 @@ You can find java doc by this path ```\target\reports\apidocs```
 
 To generate the JavaDoc for this project, run the following command:
 ## License
-This project is licensed under the MIT License. See the LICENSE file for details.
+This project is licensed under the MIT License. See the LICENSE file for details
