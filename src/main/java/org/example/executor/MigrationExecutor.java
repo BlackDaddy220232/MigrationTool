@@ -15,7 +15,22 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Properties;
 
-
+/**
+ * The {@code MigrationExecutor} class is responsible for executing, rolling back,
+ * and tracking database migrations. It handles the processing of SQL migration scripts
+ * and provides functionality to manage migration transactions in a database.
+ * <p>
+ * This class provides the following operations:
+ * <ul>
+ *     <li>Execute pending migrations</li>
+ *     <li>Rollback migrations to a specific version</li>
+ *     <li>Get the status of applied and pending migrations</li>
+ *     <li>Initialize migration tables</li>
+ * </ul>
+ * It works with a {@link ConnectionManager} to manage the database connection,
+ * a {@link MigrationManager} for handling the migrations, and a {@link ParseSql} for reading
+ * SQL migration files.
+ */
 @Getter
 @Slf4j
 public class MigrationExecutor {
@@ -26,7 +41,14 @@ public class MigrationExecutor {
     private final Connection connection;
     private final Properties properties;
     private static final String INSERT_NEW_MIGRATION_QUERY = "INSERT INTO applied_migrations (migration_name, applied_at, created_by) VALUES (?, ?, ?)";
-
+    /**
+     * Constructs a new {@code MigrationExecutor} with the given {@link ConnectionManager},
+     * {@link MigrationManager}, and {@link Properties}.
+     *
+     * @param connectionManager the manager for handling database connections
+     * @param migrationManager the manager for handling migrations
+     * @param properties the properties used for configuration
+     */
     public MigrationExecutor(ConnectionManager connectionManager,
                              MigrationManager migrationManager,
                              Properties properties) {
@@ -37,6 +59,17 @@ public class MigrationExecutor {
         this.parseSql = new ParseSql();
         this.connection = connectionManager.getConnection();
     }
+    /**
+     * Executes all pending migrations in the database. The migrations are executed within
+     * a single transaction. If any migration fails, the transaction is rolled back and the
+     * method returns {@code false}.
+     * <p>
+     * A lock is acquired during migration execution to prevent conflicts with other processes
+     * modifying the database.
+     * </p>
+     *
+     * @return {@code true} if all migrations were successfully executed, {@code false} otherwise
+     */
     public boolean executeMigrations() {
         List<File> migrationFiles = migrationManager.getPendingMigrations(connection);
         log.info("Starting migration execution...");
@@ -51,13 +84,26 @@ public class MigrationExecutor {
             }
             migrationManager.registerMigrations(migrationFiles, connection);
             commitTransaction(connection);
-            connectionManager.releaseLock(connection);
             return true;
 
         } catch (SQLException exception) {
-            throw new MigrationException("");
+            log.error("Error during migrations" + exception.getMessage());
+            throw new MigrationException("Error during migrations" + exception.getMessage());
+        }finally {
+            connectionManager.releaseLock(connection);
         }
     }
+    /**
+     * Rolls back migrations to the specified version. The rollback is executed within
+     * a single transaction. If any error occurs, the transaction is rolled back and the
+     * method terminates early.
+     * <p>
+     * A lock is acquired during rollback to prevent conflicts with other processes
+     * modifying the database.
+     * </p>
+     *
+     * @param version the version to roll back to
+     */
     public void rollbackMigrations(String version) {
         List<File> rollbackFileToExecute = migrationManager.getRollbackMigrations(version,connection);
         log.info("Starting rollback to version {}",version);
@@ -72,13 +118,17 @@ public class MigrationExecutor {
             }
             migrationManager.deleteMigrations(rollbackFileToExecute.size(),connection);
             commitTransaction(connection);
-            connectionManager.releaseLock(connection);
 
         } catch (SQLException exception) {
             log.error("Failed to rollback migrations" + exception.getMessage());
             throw new MigrationException("Failed to rollback migrations" + exception.getMessage());
+        }finally {
+            connectionManager.releaseLock(connection);
         }
     }
+    /**
+     * Retrieves the status of applied and pending migrations, logging the names of each.
+     */
     public void getStatus(){
         List<String> appliedMinagrations = migrationManager.getAppliedMigrations(connection);
         List<File> pendingMigration = migrationManager.getPendingMigrations(connection);

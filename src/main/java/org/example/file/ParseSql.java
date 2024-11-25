@@ -5,8 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.*;
 
 /**
- * Utility class for reading SQL migration files.
- * Reads the content of a given SQL file into a String.
+ * Utility class for parsing SQL migration files.
+ * <p>
+ * Provides functionality to read the content of SQL files into a String for further processing.
  */
 @Slf4j
 public class ParseSql {
@@ -21,7 +22,7 @@ public class ParseSql {
      */
     public String readSqlFileToString(File migrationFile) {
         validateFile(migrationFile);  // Validate the file before reading it
-        log.info("Reading file: {}", migrationFile.getName());
+        log.debug("Reading file: {}", migrationFile.getName());
 
         try (BufferedReader fileReader = new BufferedReader(new FileReader(migrationFile))) {
             return readFileContent(fileReader);  // Extracted method for reading the file content

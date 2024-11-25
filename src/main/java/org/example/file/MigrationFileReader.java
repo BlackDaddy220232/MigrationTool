@@ -9,6 +9,19 @@ import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
+/**
+ * Utility class for reading and validating migration and rollback SQL files.
+ * <p>
+ * This class scans specified directories, filters files based on naming conventions,
+ * and ensures they meet expected standards for migrations and rollbacks.
+ *
+ * <h2>Key Responsibilities</h2>
+ * <ul>
+ *   <li>Retrieve migration and rollback SQL files from configured directories</li>
+ *   <li>Validate file naming conventions</li>
+ *   <li>Log errors for invalid or missing files</li>
+ * </ul>
+ */
 
 @Slf4j
 public class MigrationFileReader {
@@ -17,13 +30,24 @@ public class MigrationFileReader {
     private static final String REGEX_MIGRATION_FILE="^V\\d+_\\d+_.*\\.sql$";
 
     private static final String REGEX_ROLLBACK_FILE="^UNDO\\d+_\\d+_.*\\.sql$";
-
+    /**
+     * Constructs a MigrationFileReader with paths to migration and rollback SQL files.
+     *
+     * @param migrationPath Path to the directory containing migration files.
+     * @param rollbackPath Path to the directory containing rollback files.
+     */
     public MigrationFileReader(String migrationPath, String rollbackPath) {
         this.migrationPath = migrationPath;
         this.rollbackPath = rollbackPath;
     }
 
-    // Метод для получения файлов миграции
+    /**
+     * Retrieves a list of valid migration SQL files from the specified directory.
+     * The files are filtered by the naming convention for migration files (Vx_x_*.sql)
+     * and are sorted in natural order.
+     *
+     * @return A list of valid migration files.
+     */
     public List<File> getMigrationFiles() {
         try {
             List<File> migrationFiles = Files.list(Paths.get(migrationPath)) // Читаем все файлы в папке
@@ -42,7 +66,13 @@ public class MigrationFileReader {
         }
     }
 
-    // Метод для получения файлов отката
+    /**
+     * Retrieves a list of valid rollback SQL files from the specified directory.
+     * The files are filtered by the naming convention for rollback files (UNDOx_x_*.sql)
+     * and are sorted in natural order.
+     *
+     * @return A list of valid rollback files.
+     */
     public List<File> getRollbackFiles() {
         try {
             List<File> rollbackFiles = Files.list(Paths.get(rollbackPath)) // Читаем все файлы в папке
@@ -65,7 +95,7 @@ public class MigrationFileReader {
     private boolean validateFile(Path path, String regex) {
         String fileName = path.getFileName().toString();
         if (fileName.matches(regex)) {
-            log.info("Valid {} file", fileName);
+            log.debug("Valid {} file", fileName);
             return true;
         } else {
             log.warn("Invalid {} file:", fileName);

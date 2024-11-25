@@ -10,6 +10,15 @@ import java.sql.*;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * The MigrationManager class handles database migration operations, including:
+ * <ul>
+ *     <li>Fetching and registering migrations</li>
+ *     <li>Handling migration rollbacks</li>
+ *     <li>Managing migration tables in the database</li>
+ * </ul>
+ * This class ensures that migrations are applied in the correct order and manages the state of migrations in the database.
+ */
 @Slf4j
 public class MigrationManager {
 
@@ -46,59 +55,74 @@ public class MigrationManager {
         this.properties=properties;
         fileReader = new MigrationFileReader(properties.getProperty("path.migration"), properties.getProperty("path.undo"));
     }
+
     /**
-     * Fetches applied migrations from the database.
+     * Fetches the list of applied migrations from the database.
      *
-     * @param connection Database connection
+     * @param connection The database connection
      * @return List of applied migration names
      */
     public List<String> getAppliedMigrations(Connection connection) {
-        log.info("Fetching applied migrations from the database...");
+        log.debug("Fetching applied migrations from the database...");
         try (PreparedStatement ps = connection.prepareStatement(FETCH_APPLIED_MIGRATIONS_QUERY);
              ResultSet rs = ps.executeQuery()) {
             return extractAppliedMigrations(rs);
         } catch (SQLException e) {
-            log.error("Failed to fetch applied migrations: {}", e.getMessage(), e);
-            throw new MigrationException("Failed to fetch applied migrations: " + e.getMessage());
+            logAndThrowMigrationException("Failed to fetch applied migrations: {}",e);
         }
+        return null;
     }
-
+    /**
+     * Deletes the specified number of most recent migrations from the database.
+     *
+     * @param numbersToDelete Number of migrations to delete
+     * @param connection The database connection
+     */
     public void deleteMigrations(Integer numbersToDelete,Connection connection) {
         try (PreparedStatement statement = connection.prepareStatement(DELETE_MIGRATION_QUERY)) {
             statement.setInt(1, numbersToDelete); // Устанавливаем количество миграций для удаления
             int rowsAffected = statement.executeUpdate(); // Выполняем удаление
-            log.info("Deleted " + rowsAffected + " migrations from applied_migrations.");
+            log.debug("Deleted " + rowsAffected + " migrations from applied_migrations.");
         } catch (SQLException e) {
-            log.error("Failed to register migrations: {}", e.getMessage(), e);
-            throw new MigrationException("Failed to register migrations: " + e.getMessage());
+            logAndThrowMigrationException("Failed to register migrations: {}",e);
         }
     }
 
     /**
-     * Fetches pending migrations by comparing applied migrations and available files.
+     * Fetches pending migrations by comparing applied migrations with available migration files.
      *
-     * @param connection Database connection
+     * @param connection The database connection
      * @return List of pending migration files
      */
     public List<File> getPendingMigrations(Connection connection) {
-        log.info("Fetching pending migrations...");
+        log.debug("Fetching pending migrations...");
         List<File> allMigrations = fileReader.getMigrationFiles();
         List<String> appliedMigrations = getAppliedMigrations(connection);
-
         List<File> pendingMigrations = filterPendingMigrations(allMigrations, appliedMigrations);
         log.info("Found {} pending migrations.", pendingMigrations.size());
         return pendingMigrations;
     }
-
+    /**
+     * Registers the provided migration files in the database.
+     *
+     * @param migrationFiles List of migration files to be registered
+     * @param connection The database connection
+     */
     public void registerMigrations(List<File> migrationFiles, Connection connection) {
         log.info("Registering migrations in the database...");
         try {
             executeMigrationRegistration(migrationFiles, connection);
         } catch (SQLException e) {
-            log.error("Failed to register migrations: {}", e.getMessage(), e);
-            throw new MigrationException("Failed to register migrations: " + e.getMessage());
+            logAndThrowMigrationException("Failed to register migrations: {}",e);
         }
     }
+    /**
+     * Fetches the rollback migrations for the specified version.
+     *
+     * @param version Migration version to rollback
+     * @param connection The database connection
+     * @return List of rollback migration files
+     */
     public List<File> getRollbackMigrations(String version, Connection connection) {
         List<String> appliedMigrations = getAppliedMigrations(connection);
         List<File> rollbackFiles = fileReader.getRollbackFiles();
@@ -108,6 +132,12 @@ public class MigrationManager {
         Collections.reverse(appliedMigrations);
         return findRollbackFilesToApply(version, appliedMigrations, rollbackFiles);
     }
+    /**
+     * Creates the necessary migration-related tables in the database if they do not exist.
+     *
+     * @param connection The database connection
+     * @return true if tables were created, false otherwise
+     */
     public boolean createTables(Connection connection) {
         boolean tablesCreated = createAppliedMigrationsTable(connection);
         if (createMigrationLocksTable(connection)) {
@@ -116,9 +146,7 @@ public class MigrationManager {
         return tablesCreated;
     }
 
-    /**
-     * Поиск файлов откатов, которые нужно применить.
-     */
+    //private helper methods
     private List<File> findRollbackFilesToApply(String version, List<String> appliedMigrations, List<File> rollbackFiles) {
         List<File> rollbackFilesToReturn = new ArrayList<>();
         for (String appliedMigration : appliedMigrations) {
@@ -128,7 +156,7 @@ public class MigrationManager {
             }
             File rollbackFile = findRollbackFileForMigration(appliedMigrationVersion, rollbackFiles);
             validateRollbackFile(appliedMigrationVersion, rollbackFile);
-            log.info("Rollback file found for migration version {}: {}", appliedMigrationVersion, rollbackFile.getName());
+            log.debug("Rollback file found for migration version {}: {}", appliedMigrationVersion, rollbackFile.getName());
             rollbackFilesToReturn.add(rollbackFile);
         }
         return rollbackFilesToReturn;
@@ -146,9 +174,7 @@ public class MigrationManager {
         String secondMigrationVersion = extractVersionFromFileName(secondMigration);
         return firstMigrationVersion.equals(secondMigrationVersion);
     }
-    /**
-     * Проверяет существование файла отката и его версию.
-     */
+
     private void validateRollbackFile(String appliedMigrationVersion, File rollbackFile) {
         if (rollbackFile == null) {
             throw new MigrationException("Missing rollback file for migration version: " + appliedMigrationVersion);
@@ -161,9 +187,6 @@ public class MigrationManager {
         }
     }
 
-    /**
-     * Ищет файл отката для заданной версии миграции.
-     */
     private File findRollbackFileForMigration(String migrationVersion, List<File> rollbackFiles) {
         return rollbackFiles.stream()
                 .filter(file -> migrationVersion.equals(extractVersionFromFileName(file.getName())))
@@ -172,7 +195,6 @@ public class MigrationManager {
     }
 
 
-    // Метод для извлечения версии из имени файла
     private String extractVersionFromFileName(String fileName) {
         // Используем регулярное выражение, чтобы оставить только числа и подчеркивания до последней цифры
         String versionPart = fileName.replaceAll("[^0-9_]", ""); // Оставляем только цифры и подчеркивания
@@ -190,9 +212,6 @@ public class MigrationManager {
         return appliedMigrations;
     }
 
-    /**
-     * Filters out applied migrations to determine pending migrations.
-     */
     private List<File> filterPendingMigrations(List<File> allMigrations, List<String> appliedMigrations) {
         return allMigrations.stream()
                 .filter(file -> !appliedMigrations.contains(file.getName()))
@@ -204,11 +223,10 @@ public class MigrationManager {
                 addMigrationToBatch(ps, migrationFile);
             }
             ps.executeBatch();
-            log.info("Successfully registered {} migrations.", migrationFiles.size());
+            log.debug("Successfully registered {} migrations.", migrationFiles.size());
         } catch (SQLException e) {
             connection.rollback();
-            log.warn("Transaction rolled back due to an error.");
-            throw new DatabaseException("Transaction rolled back due to an error.");
+            logAndThrowDatabaseException("Transaction rolled back due to an error.",e);
         }
     }
     private void addMigrationToBatch(PreparedStatement ps, File migrationFile) throws SQLException {
@@ -217,7 +235,7 @@ public class MigrationManager {
         ps.setTimestamp(2, new Timestamp(System.currentTimeMillis()));
         ps.setString(3, properties.getProperty("db.username"));
         ps.addBatch();
-        log.info("Added migration {} to the batch.", migrationName);
+        log.debug("Added migration {} to the batch.", migrationName);
     }
     private boolean isTableExists(String sqlCommand,Connection connection){
         try(PreparedStatement ps = connection.prepareStatement(sqlCommand)){
@@ -229,9 +247,9 @@ public class MigrationManager {
             }
             return true;
         }catch (SQLException e){
-            log.error("Can't get access to database");
-            throw new DatabaseException("Can't get access to database");
+            logAndThrowDatabaseException("Can't get access to database",e);
         }
+        return false;
     }
 
     private boolean createAppliedMigrationsTable(Connection connection) {
@@ -240,8 +258,7 @@ public class MigrationManager {
                 ps.execute();
                 return true; // Indicate that the table was created
             } catch (SQLException e) {
-                log.error("Failed to create applied migrations table");
-                throw new DatabaseException("Failed to create applied migrations table"+e.getMessage());
+                logAndThrowDatabaseException("Failed to create applied migrations table",e);
             }
         }
         return false; // Table already exists
@@ -253,11 +270,18 @@ public class MigrationManager {
                 ps.execute();
                 return true; // Indicate that the table was created
             } catch (SQLException e) {
-                log.error("Failed to create migration locks table");
-                throw new DatabaseException("Failed to create migration locks table" + e.getMessage());
+                logAndThrowDatabaseException("Failed to create migration locks table",e);
             }
         }
         return false; // Table already exists
+    }
+    private void logAndThrowDatabaseException(String message, SQLException e) {
+        log.error(message, e);
+        throw new DatabaseException(message + ": " + e.getMessage());
+    }
+    private void logAndThrowMigrationException(String message, SQLException e) {
+        log.error(message, e);
+        throw new MigrationException(message + ": " + e.getMessage());
     }
 
 
