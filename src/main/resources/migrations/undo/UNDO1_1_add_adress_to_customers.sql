@@ -1,0 +1,2 @@
+ALTER TABLE Customers
+DROP COLUMN Address;
